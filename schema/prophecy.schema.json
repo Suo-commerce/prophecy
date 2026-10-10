@@ -1,232 +1,109 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Prophecy",
-  "description": "One prophecy record (the stored, append-only form).",
+  "title": "SchemaRoot",
+  "description": "Schema vehicle only — never serialised. Carries both wire shapes at the top level of `schema/prophecy.schema.json` so consumers see `Prophecy` and `ProphecySubmission` (and every shared definition) in one file.",
   "type": "object",
   "required": [
-    "created_at",
-    "id",
-    "kind",
-    "producer",
-    "provenance"
+    "prophecy",
+    "submission"
   ],
   "properties": {
-    "created_at": {
-      "description": "When the prophecy was created.",
-      "type": "string",
-      "format": "date-time"
+    "prophecy": {
+      "$ref": "#/definitions/Prophecy"
     },
-    "expires_at": {
-      "description": "Expiry: after this instant the prophecy may no longer be resolved — the sweep moves it to `Expired`.",
-      "type": [
-        "string",
-        "null"
-      ],
-      "format": "date-time"
-    },
-    "fulfilment": {
-      "description": "The fulfilment, once it happens. Terminal.",
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Fulfilment"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "id": {
-      "$ref": "#/definitions/ProphecyId"
-    },
-    "kind": {
-      "$ref": "#/definitions/Kind"
-    },
-    "producer": {
-      "$ref": "#/definitions/Producer"
-    },
-    "provenance": {
-      "$ref": "#/definitions/Provenance"
-    },
-    "requires_human": {
-      "description": "False ONLY for deterministic Findings from a reader. Model- and human-produced prophecies carry true; the store REJECTS a `false` from a non-Reader producer (fail closed).",
-      "default": true,
-      "type": "boolean"
+    "submission": {
+      "$ref": "#/definitions/ProphecySubmission"
     }
   },
   "definitions": {
+    "ExpiresIn": {
+      "description": "chrono Duration in its serde wire form: [seconds, nanos]",
+      "type": "array",
+      "items": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "maxItems": 2,
+      "minItems": 2
+    },
     "Fulfilment": {
-      "description": "How a prophecy ended. Terminal: a fulfilled or dismissed prophecy is never re-resolved.",
+      "description": "What fulfilling this prophecy means, on a `Prophecy` (§3). `target` and `params` come from the submitter; `requires_human` is **host-stamped** and must not be accepted from a submitter — submitters use [`SubmissionFulfilment`], which has no such field.",
       "type": "object",
       "required": [
-        "resolved_at",
-        "resolved_by",
-        "state"
+        "requires_human",
+        "target"
       ],
       "properties": {
-        "note": {
-          "description": "Free-text note (the operator's or producer's reason).",
-          "type": [
-            "string",
-            "null"
-          ]
+        "params": {
+          "description": "Parameters for the target, from the submitter.",
+          "default": {}
         },
-        "resolved_at": {
-          "description": "When it was resolved.",
-          "type": "string",
-          "format": "date-time"
+        "requires_human": {
+          "description": "HOST-STAMPED: true whenever the host accepted a fulfilment with the record, false when the record has none. It has exactly one meaning — *there is a fulfilment to perform* — and is never a trust claim (derivation trust is the host-verified `producer`). A submitter cannot set it.",
+          "type": "boolean"
         },
-        "resolved_by": {
-          "description": "Who resolved it.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/Producer"
-            }
-          ]
-        },
-        "state": {
-          "description": "The terminal state this prophecy ended in.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/State"
-            }
-          ]
+        "target": {
+          "description": "A recipe, command or action name the host understands.",
+          "type": "string"
         }
       }
     },
     "Kind": {
-      "description": "The kinds of prophecy.",
+      "description": "What kind of proposal this is. Content is carried by the record's top-level fields (`title`, `body`, `fulfilment`), not by the variant.",
       "oneOf": [
         {
-          "description": "A deterministic observation from a reader: a structured fact about some watched state. No inference.",
-          "type": "object",
-          "required": [
-            "kind",
-            "payload",
-            "source"
-          ],
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "finding"
-              ]
-            },
-            "payload": {
-              "description": "The finding's payload — the reader's structured output (rows, counts, matched shapes). Opaque to this crate."
-            },
-            "source": {
-              "description": "The source that produced it.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/Source"
-                }
-              ]
-            }
-          }
+          "description": "Something observed: a new message, a moved meeting, a changed row. No inference; `confidence` is 1.0 and `fulfilment` is usually absent.",
+          "type": "string",
+          "enum": [
+            "finding"
+          ]
         },
         {
-          "description": "A drafted response to a finding. A model product; the text itself, never a dispatch.",
-          "type": "object",
-          "required": [
-            "finding",
-            "kind",
-            "text"
-          ],
-          "properties": {
-            "finding": {
-              "description": "The finding this drafts a response to.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ProphecyId"
-                }
-              ]
-            },
-            "kind": {
-              "type": "string",
-              "enum": [
-                "draft"
-              ]
-            },
-            "text": {
-              "description": "The drafted text.",
-              "type": "string"
-            }
-          }
+          "description": "Proposed text. The text lives in `body`; writing it anywhere is the fulfilment, not the prophecy.",
+          "type": "string",
+          "enum": [
+            "draft"
+          ]
         },
         {
-          "description": "A suggested action with its recipe shape. A proposal — nothing executes it.",
-          "type": "object",
-          "required": [
-            "kind",
-            "params",
-            "rationale",
-            "recipe"
-          ],
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "suggested_action"
-              ]
-            },
-            "params": {
-              "description": "The proposed params (rendered, not templated)."
-            },
-            "rationale": {
-              "description": "Why the model suggests it (bounded, recorded).",
-              "type": "string"
-            },
-            "recipe": {
-              "description": "The recipe (or named procedure) the action proposes.",
-              "type": "string"
-            }
-          }
+          "description": "A proposed operation: `fulfilment.target` names it, `fulfilment.params` parameterise it.",
+          "type": "string",
+          "enum": [
+            "suggested_action"
+          ]
         },
         {
-          "description": "An improvement proposal pointing at a configuration target with evidence. NOTHING applies it — a human edits the file.",
-          "type": "object",
-          "required": [
-            "kind",
-            "proposal",
-            "target"
-          ],
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "improvement"
-              ]
-            },
-            "proposal": {
-              "description": "The proposed change, as text or a patch-shaped object."
-            },
-            "target": {
-              "description": "The target it points at (a file, section, or config key).",
-              "type": "string"
-            }
-          }
+          "description": "A proposed change to the producing system itself. A pull request; a human merges it — no host applies it automatically, and a producer never acts on its own.",
+          "type": "string",
+          "enum": [
+            "improvement"
+          ]
         }
       ]
     },
     "Producer": {
-      "description": "What produced this prophecy — the trust tier of the derivation.",
+      "description": "Who appended the prophecy, as **established by the host** from how the record arrived (in-process reader, verified socket peer, human channel) — never from the record itself.",
       "oneOf": [
         {
-          "description": "A deterministic reader (configured code, no inference). The only producer that may set `requires_human: false`.",
+          "description": "Deterministic code, no inference. Readers produce only Findings (§4); a Reader-origin record of any other kind is rejected at append.",
           "type": "string",
           "enum": [
             "reader"
           ]
         },
         {
-          "description": "A model over collected findings (resident or external). Always `requires_human: true`.",
+          "description": "A model. May ask for fulfilment; the asking is never the fulfilling. Dismissal by a model is host-opted-in only (§5).",
           "type": "string",
           "enum": [
             "model"
           ]
         },
         {
-          "description": "A human (the operator, a reviewer).",
+          "description": "A human — the operator or a reviewer.",
           "type": "string",
           "enum": [
             "human"
@@ -234,17 +111,206 @@
         }
       ]
     },
-    "ProphecyId": {
-      "description": "A prophecy's identity.",
-      "type": "string"
-    },
-    "Provenance": {
-      "description": "The origin of one observation a prophecy was derived from — the audit trail. Host systems fill these fields from their own records; the crate only requires they be present.",
+    "Prophecy": {
+      "description": "One prophecy record (§3). Host-stamped fields (`id`, `producer`, `state`, `created_at`, `expires_at`, `state_changed_at`, `resolution_note`, `fulfilment.requires_human`) are written by the host and are not accepted from a submitter; submitter fields (`kind`, `source`, `provenance`, `title`, `body`, `confidence`, `fulfilment.target`, `fulfilment.params`) arrive via [`ProphecySubmission`] and are stamped in by [`Prophecy::from_submission`].",
       "type": "object",
       "required": [
-        "captured_at",
-        "event_log_seq",
-        "observation_hash"
+        "body",
+        "confidence",
+        "created_at",
+        "expires_at",
+        "id",
+        "kind",
+        "producer",
+        "provenance",
+        "source",
+        "state_changed_at",
+        "title"
+      ],
+      "properties": {
+        "body": {
+          "description": "**Submitter-provided.** Full content: for a Draft, the draft text itself; for an Improvement, the proposal and the evidence.",
+          "type": "string"
+        },
+        "confidence": {
+          "description": "**Submitter-provided.** The producer's own estimate, 0.0–1.0. Readers emit 1.0 (they observed, they did not infer). It is provenance, not a ranking: presentation order is the host's concern and must not be derived from this field alone.",
+          "type": "number",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0
+        },
+        "created_at": {
+          "description": "*Host-stamped.**",
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "description": "**Host-stamped** at creation (default 24 h; a submitter may propose a shorter value and the host clamps it). Never extended.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "fulfilment": {
+          "description": "**Submitter-provided plan, host-completed.** Present when fulfilling this prophecy means running something; absent for informational Findings.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Fulfilment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "description": "**Host-stamped.** Unique, host-assigned (ULID recommended — sortable by creation).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ProphecyId"
+            }
+          ]
+        },
+        "kind": {
+          "description": "**Submitter-provided.** Finding · Draft · SuggestedAction · Improvement.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Kind"
+            }
+          ]
+        },
+        "producer": {
+          "description": "**Host-stamped** from the authenticated caller identity (§7.5). A submitter cannot set, propose or override it.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Producer"
+            }
+          ]
+        },
+        "provenance": {
+          "description": "*Submitter-provided.** Capture time plus open evidence map.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Provenance"
+            }
+          ]
+        },
+        "resolution_note": {
+          "description": "**Host-stamped.** Required on `Fulfilled` and `Dismissed`; says who decided and why. Machine-written for host bookkeeping (§7.6); a model dismissal carries the model's identity.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "**Submitter-provided.** The configured source plus stable row identity.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Source"
+            }
+          ]
+        },
+        "state": {
+          "description": "**Host-stamped.** Proposed · Fulfilled · Dismissed · Expired. Only the host changes it (§5).",
+          "default": "proposed",
+          "allOf": [
+            {
+              "$ref": "#/definitions/State"
+            }
+          ]
+        },
+        "state_changed_at": {
+          "description": "**Host-stamped.** When `state` last changed — the creation instant while Proposed.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "title": {
+          "description": "*Submitter-provided.** Human-readable one-liner.",
+          "type": "string"
+        }
+      }
+    },
+    "ProphecyId": {
+      "description": "A prophecy's identity. Host-assigned (ULID recommended — sortable by creation); a submitter never provides one.",
+      "type": "string"
+    },
+    "ProphecySubmission": {
+      "description": "The shape a producer sends to a host (§8): **only submitter fields**. No `id`, no `producer`, no `state`, no `created_at`, no `state_changed_at`, no `requires_human`, no `resolution_note` — the host stamps all of those ([`Prophecy::from_submission`]).",
+      "type": "object",
+      "required": [
+        "body",
+        "confidence",
+        "kind",
+        "provenance",
+        "source",
+        "title"
+      ],
+      "properties": {
+        "body": {
+          "description": "*Submitter-provided.** Full content.",
+          "type": "string"
+        },
+        "confidence": {
+          "description": "**Submitter-provided.** The producer's own estimate, 0.0–1.0. Readers emit 1.0 (they observed, they did not infer). It is provenance, not a ranking: presentation order is the host's concern and must not be derived from this field alone.",
+          "type": "number",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0
+        },
+        "expires_in": {
+          "description": "Proposed expiry. The host clamps it, never extends it; the stamped `expires_at` is the host's word, not the submitter's.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExpiresIn"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fulfilment": {
+          "description": "**Submitter-provided.** The fulfilment plan minus `requires_human`, which the host stamps.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SubmissionFulfilment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "description": "**Submitter-provided.** Finding · Draft · SuggestedAction · Improvement.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Kind"
+            }
+          ]
+        },
+        "provenance": {
+          "description": "*Submitter-provided.** Capture time plus open evidence map.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Provenance"
+            }
+          ]
+        },
+        "source": {
+          "description": "**Submitter-provided.** The configured source plus stable row identity.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Source"
+            }
+          ]
+        },
+        "title": {
+          "description": "*Submitter-provided.** Human-readable one-liner.",
+          "type": "string"
+        }
+      }
+    },
+    "Provenance": {
+      "description": "The audit trail back to what was observed (§3).",
+      "type": "object",
+      "required": [
+        "captured_at"
       ],
       "properties": {
         "captured_at": {
@@ -252,20 +318,16 @@
           "type": "string",
           "format": "date-time"
         },
-        "event_log_seq": {
-          "description": "The host's log sequence number for that observation — the prophecy points INTO the durable log.",
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "observation_hash": {
-          "description": "The observation's content hash — the exact state the evidence was read from (whatever hash the host records).",
-          "type": "string"
+        "evidence": {
+          "description": "An open map the producer fills so the prophecy can be audited back to what was observed. Populo writes `observation_hash` and `event_log_seq`; a repository producer might write a commit id; a chat producer a message id. The schema does not enumerate keys, and no key carries a semantic obligation for consumers. A model-origin record derived from Findings references those Findings' ids here (§6.4); hosts should verify the referenced ids exist.",
+          "default": {},
+          "type": "object",
+          "additionalProperties": true
         }
       }
     },
     "Source": {
-      "description": "A deterministic watch target's identity — where a finding came from (a configured source id plus its stable identity).",
+      "description": "What the producer was looking at: the configured source plus a stable per-row identity (§3).",
       "type": "object",
       "required": [
         "id",
@@ -274,44 +336,68 @@
       ],
       "properties": {
         "id": {
-          "description": "The configured source's id (the watcher's own name for it).",
+          "description": "The configured source this came from (the host's source id).",
           "type": "string"
         },
         "row_hash": {
-          "description": "The full-row hash — the evidence for THIS row of the finding (row contents hashed; any content change is a new evidence value).",
+          "description": "SHA-256, hex-encoded, over the producer's canonical serialisation of the item at observation time. Compared only within one source on one host.",
           "type": "string"
         },
         "row_key": {
-          "description": "The finding's stable ROW identity as the reader defines it (e.g. sender+subject+received for a message list, or a natural key for any row-shaped source). Readers key their emissions on this so a host can deduplicate and coalesce.",
+          "description": "Stable identity of the item across observations, producer-defined (for mail: sender + subject + received; for a calendar: the event's natural key). Deduplication applies only to an identical `(row_key, row_hash)` pair; a changed `row_hash` under the same `row_key` is a content change and produces a NEW prophecy whose evidence references the prior one's id.",
           "type": "string"
         }
       }
     },
     "State": {
-      "description": "The terminal state of a resolved prophecy.",
+      "description": "The lifecycle state. All terminal states are terminal: there is no reopening and no second transition (§5).",
       "oneOf": [
         {
-          "description": "The proposal's gated task ran to completion. This is a RECORD of completion, never an instruction.",
+          "description": "Open. Entered at creation; left only by a human decision, host bookkeeping, or expiry.",
+          "type": "string",
+          "enum": [
+            "proposed"
+          ]
+        },
+        {
+          "description": "Terminal. A human approved; the host carries out the fulfilment as ordinary, gated, supervised work.",
           "type": "string",
           "enum": [
             "fulfilled"
           ]
         },
         {
-          "description": "Rejected without running.",
+          "description": "Terminal. Declined by a human, by host bookkeeping with a machine-written note, or by a model where the host has explicitly opted in (the model's identity is then mandatory in `resolution_note`).",
           "type": "string",
           "enum": [
             "dismissed"
           ]
         },
         {
-          "description": "Removed by the expiry sweep (not a choice anyone made).",
+          "description": "Terminal. `expires_at` passed while still open; the host's sweep moved it here.",
           "type": "string",
           "enum": [
             "expired"
           ]
         }
       ]
+    },
+    "SubmissionFulfilment": {
+      "description": "The submitter's form of [`Fulfilment`] (§8): `target` and `params` only. No `requires_human` — the host derives and stamps that.",
+      "type": "object",
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "params": {
+          "description": "Parameters for the target.",
+          "default": {}
+        },
+        "target": {
+          "description": "A recipe, command or action name the host understands.",
+          "type": "string"
+        }
+      }
     }
   }
 }
